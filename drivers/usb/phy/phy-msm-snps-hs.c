@@ -83,10 +83,13 @@
 #define USB_HSPHY_1P8_VOL_MAX			1800000 /* uV */
 #define USB_HSPHY_1P8_HPM_LOAD			19000	/* uA */
 
+// only for debug
+/*
 #undef dev_dbg
 #define dev_dbg dev_info
 #undef pr_debug
 #define pr_debug pr_info
+*/
 
 unsigned long panel_info = 1;
 
@@ -836,14 +839,15 @@ static int msm_hsphy_probe(struct platform_device *pdev)
 
 		if (panel_info == 1)
 			ret = of_property_read_u32_array(dev->of_node,
-				"qcom,param-override-seq",
-				phy->param_override_seq,
-				phy->param_override_seq_cnt);
+					"qcom,param-override-seq",
+					phy->param_override_seq,
+					phy->param_override_seq_cnt);
+
 		if (panel_info == 0)
 			ret = of_property_read_u32_array(dev->of_node,
-				"qcom,param-override-seq-no-panel",
-				phy->param_override_seq,
-				phy->param_override_seq_cnt);
+					"qcom,param-override-seq-no-panel",
+					phy->param_override_seq,
+					phy->param_override_seq_cnt);
 
 		if (ret) {
 			dev_err(dev, "qcom,param-override-seq read failed %d\n",

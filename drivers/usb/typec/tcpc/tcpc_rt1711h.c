@@ -712,7 +712,7 @@ static int rt1711_tcpc_init(struct tcpc_device *tcpc, bool sw_reset)
 	bool retry_discard_old = false;
 	struct rt1711_chip *chip = tcpc_get_dev_data(tcpc);
 
-	RT1711_INFO("\n");
+	RT1711_INFO("start\n");
 
 	if (sw_reset) {
 		ret = rt1711_software_reset(tcpc);

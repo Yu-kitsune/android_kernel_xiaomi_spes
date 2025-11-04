@@ -422,12 +422,6 @@ bool max77729_sec_pps_control(int en);
 extern const uint8_t BOOT_FLASH_FW_PASS2[];
 
 // #define DEBUG_MAX77729
-// #ifdef DEBUG_MAX77729
-// #define msg_maxim(format, args...) \
-		// pr_err("max77729: %s: " format "\n", __func__, ## args)
-// #else
-// #define msg_maxim(format, args...)
-// #endif [> DEBUG_MAX77766<]
 #define msg_maxim(format, args...) \
 	pr_info("[%s]: %s: " format, KBUILD_MODNAME, __func__, ##args)
 #endif

@@ -42,7 +42,7 @@ static irqreturn_t ant_div_interrupt(int irq, void *data)
 		return IRQ_HANDLED;
 	} else {
 		ant_div_info->ant_div_check_state = ant_div_gpio;
-		pr_err("Macle report key %s\n");
+		pr_err("Macle report key %s\n", ant_div_gpio ? "connect" : "disconnect");
 	}
 	if (ant_div_gpio) {
 		input_report_key(ant_div_info->ipdev, DIV_ANT_CONNECT, 1);

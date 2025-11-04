@@ -10,6 +10,7 @@
 #include <linux/workqueue.h>
 #include <linux/usb/usbpd.h>
 #include <linux/notifier.h>
+#include <linux/ratelimit.h>
 #include <linux/jiffies.h>
 #include <linux/printk.h>
 #include "pd_policy_manager.h"
@@ -65,28 +66,25 @@ static const struct pdpm_config pm_config = {
 	.fc2_disable_sw	= true,
 };
 
-#define LOG_INTERVAL (3 * HZ)
+#define _PDPM_RAW(a, b) a##b
+#define _PDPM_RATE(a, b) _PDPM_RAW(a, b)
 
-#define pdpm_dbg(fmt, ...)					\
-do {								\
-	static unsigned long __last_dbg = -LOG_INTERVAL;	\
-	if (time_after(jiffies, __last_dbg + LOG_INTERVAL)) {	\
-		__last_dbg = jiffies;				\
-		pr_debug(fmt, ##__VA_ARGS__);			\
-	}							\
+#if defined(__COUNTER__)
+#define _PDPM_FALLBACK() _PDPM_RATE(pdpm_rl_, __COUNTER__)
+#else
+#define _PDPM_FALLBACK() _PDPM_RATE(pdpm_rl_, __LINE__)
+#endif
+
+#define _PDPM_INFO_WRAPPER(name, fmt, ...)		\
+do {							\
+	static DEFINE_RATELIMIT_STATE(name, 3 * HZ, 1);	\
+	if (__ratelimit(&name))				\
+		pr_info(fmt, ##__VA_ARGS__);		\
 } while (0)
 
-#define pdpm_info(fmt, ...)					\
-do {								\
-	static unsigned long __last_info = -LOG_INTERVAL;	\
-	if (time_after(jiffies, __last_info + LOG_INTERVAL)) {	\
-		__last_info = jiffies;				\
-		pr_info(fmt, ##__VA_ARGS__);			\
-	}							\
-} while (0)
-
-#define pdpm_err(fmt, ...)	\
-	pr_err(fmt, ##__VA_ARGS__)
+#define pdpm_info(fmt, ...)	_PDPM_INFO_WRAPPER(_PDPM_FALLBACK(), fmt, ##__VA_ARGS__)
+#define pdpm_err(fmt, ...)	do { pr_err(fmt, ##__VA_ARGS__); } while (0)
+#define pdpm_dbg(fmt, ...)	do { pr_debug(fmt, ##__VA_ARGS__); } while (0)
 
 static struct usbpd_pm *__pdpm;
 
@@ -230,7 +228,7 @@ static bool usbpd_get_pps_status(struct usbpd_pm *pdpm)
 	u8 cap_idx;
 	//u32 vta_meas, ita_meas, prog_mv;
 
-	pdpm_info("start..\n");
+	pdpm_info("start\n");
 	if (check_typec_attached_snk(pdpm->tcpc) < 0)
 		return false;
 
@@ -400,6 +398,7 @@ static int usbpd_pm_update_sw_status(struct usbpd_pm *pdpm)
 	return ret;
 }
 */
+
 static void usbpd_check_tcpc(struct usbpd_pm *pdpm)
 {
 	if (!pdpm->tcpc) {
@@ -493,6 +492,8 @@ static void usbpd_pm_update_cp_status(struct usbpd_pm *pdpm)
 	if (!ret)
 		pdpm->cp.ibus_curr_cp = val.intval;
 
+	pdpm->cp.ibus_curr = pdpm->cp.ibus_curr_cp; // + pdpm->cp.ibus_curr_sw;
+
 	ret = power_supply_get_property(pdpm->cp_psy,
 			POWER_SUPPLY_PROP_SC_VBUS_ERROR_STATUS, &val);
 	if (!ret) {
@@ -500,8 +501,6 @@ static void usbpd_pm_update_cp_status(struct usbpd_pm *pdpm)
 		pdpm->cp.vbus_error_low = (val.intval >> 5) & 0x01;
 		pdpm->cp.vbus_error_high = (val.intval >> 4) & 0x01;
 	}
-
-	pdpm->cp.ibus_curr = pdpm->cp.ibus_curr_cp + pdpm->cp.ibus_curr_sw;
 
 	ret = power_supply_get_property(pdpm->cp_psy,
 			POWER_SUPPLY_PROP_SC_BUS_TEMPERATURE, &val);
@@ -955,7 +954,7 @@ static int usbpd_pm_fc2_charge_algo(struct usbpd_pm *pdpm)
 	if (pdpm->cp.bat_ocp_alarm /*|| pdpm->cp.bat_ovp_alarm */
 		|| pdpm->cp.bus_ocp_alarm || pdpm->cp.bus_ovp_alarm)
 		//|| pdpm->cp.vbus_error_high || pdpm->cp_sec.vbus_error_high
-		/*|| pdpm->cp.tbat_temp > 60  || pdpm->cp.tbus_temp > 50)*/
+		/*|| pdpm->cp.tbat_temp > 60 || pdpm->cp.tbus_temp > 50)*/
 		hw_ctrl_steps = -pm_config.fc2_steps;
 	else
 		hw_ctrl_steps = pm_config.fc2_steps;
@@ -1051,9 +1050,42 @@ static void usbpd_pm_move_state(struct usbpd_pm *pdpm, enum pm_state state)
 	pdpm->state = state;
 }
 
+/* set jeita FV befor workaround */
+static int pd_set_cv(struct usbpd_pm *pdpm, int val)
+{
+	int last_pd_cv = 0;
+	int ret = 0;
+
+	if (!pdpm->fv_votable) {
+		pdpm_err("fv_votable is null!\n");
+		return -ENXIO;
+	}
+
+	last_pd_cv = get_effective_result(pdpm->fv_votable);
+	if (last_pd_cv < 0) {
+		pdpm_err("get_effective_result fail!\n");
+		return last_pd_cv;
+	}
+
+	pdpm->pd_cv = val;
+	pdpm_info("pd_cv: %d, last_pd_cv: %d\n", pdpm->pd_cv, last_pd_cv);
+
+	if (pdpm->pd_cv != last_pd_cv) {
+		ret = vote(pdpm->fv_votable, JEITA_VOTER, true, pdpm->pd_cv);
+		if (ret < 0) {
+			pdpm_err("vote pd_cv to %d fail, ret=%d\n", pdpm->pd_cv, ret);
+			return ret;
+		}
+	} else {
+		pdpm_info("skip vote, pd_cv: %d, last_pd_cv: %d\n", pdpm->pd_cv, last_pd_cv);
+	}
+
+	return 0;
+}
+
 static int usbpd_pm_sm(struct usbpd_pm *pdpm)
 {
-	int ret = 0, rc = 0, thermal_level = 0;
+	int ret = 0, rc = 0, thermal_level = 0, cv_val = 0;
 	static int tune_vbus_retry;
 	static bool stop_sw;
 	static bool recover;
@@ -1128,6 +1160,11 @@ static int usbpd_pm_sm(struct usbpd_pm *pdpm)
 		}
 		break;
 	case PD_PM_STATE_FC2_ENTRY_3:
+		cv_val = 4450;
+		ret = pd_set_cv(pdpm, cv_val);
+		if (ret < 0) {
+			pdpm_err("set pd_cv fail, ret: %d\n", ret);
+		}
 		usbpd_pm_check_cp_enabled(pdpm);
 		if (!pdpm->cp.charge_enabled) {
 			usbpd_pm_enable_cp(pdpm, true);
@@ -1289,7 +1326,7 @@ static void cp_psy_change_work(struct work_struct *work)
 {
 	struct usbpd_pm *pdpm = container_of(work, struct usbpd_pm, cp_psy_change_work);
 
-	pdpm_info("entry.\n");
+	pdpm_dbg("entry\n");
 	pdpm->psy_change_running = false;
 }
 
@@ -1463,7 +1500,7 @@ err_notifer:
 err_psy:
 	__pdpm = NULL;
 	//kfree(pdpm);
-	pr_err("fail!!\n");
+	pr_err("fail!\n");
 	return ret;
 }
 
