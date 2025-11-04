@@ -2,7 +2,7 @@
  * SC8551 battery charging driver
 */
 
-#define pr_fmt(fmt)	"[sc8551]: " fmt
+#define pr_fmt(fmt)	"[sc8551_chg]: " fmt
 
 #include <linux/gpio.h>
 #include <linux/i2c.h>
@@ -40,7 +40,7 @@ typedef enum {
 	ADC_MAX_NUM,
 } ADC_CH;
 
-static int sc8551_adc_lsb[] = {
+static const u32 sc8551_adc_lsb[ADC_MAX_NUM] = {
 	[ADC_IBUS]	= SC8551_IBUS_ADC_LSB,
 	[ADC_VBUS]	= SC8551_VBUS_ADC_LSB,
 	[ADC_VAC]	= SC8551_VAC_ADC_LSB,
@@ -296,37 +296,42 @@ struct sc8551 {
 /************************************************************************/
 static int __sc8551_read_byte(struct sc8551 *sc, u8 reg, u8 *data)
 {
-	s32 ret;
-	int retry = 3;
+	int ret, retry;
+	const int max_retry = 3;
 
-	do {
+	for (retry = 1; retry <= max_retry; retry++) {
 		ret = i2c_smbus_read_byte_data(sc->client, reg);
 		if (ret >= 0) {
 			*data = (u8)ret;
 			return 0;
 		}
 
-		sc_err("failed to read reg 0x%02x, ret=%d\n", reg, ret);
-		udelay(200);
-	} while (--retry);
+		sc_err("read 0x%02x failed (try %d/%d): %d\n",
+				reg, retry, max_retry, ret);
+
+		if (retry < max_retry)
+			udelay(200);
+	}
 
 	return ret;
 }
 
 static int __sc8551_write_byte(struct sc8551 *sc, int reg, u8 val)
 {
-	s32 ret;
-	int retry = 3;
+	int ret, retry;
+	const int max_retry = 3;
 
-	do {
+	for (retry = 1; retry <= max_retry; retry++) {
 		ret = i2c_smbus_write_byte_data(sc->client, reg, val);
 		if (ret >= 0)
 			return 0;
 
-		sc_err("failed to write 0x%02x to reg 0x%02x, ret=%d\n",
-				val, reg, ret);
-		udelay(200);
-	} while (--retry);
+		sc_err("write 0x%02x->0x%02x failed (try %d/%d): %d\n",
+				val, reg, retry, max_retry, ret);
+
+		if (retry < max_retry)
+			udelay(200);
+	}
 
 	return ret;
 }
@@ -361,8 +366,7 @@ static int sc8551_write_byte(struct sc8551 *sc, u8 reg, u8 data)
 	return ret;
 }
 
-static int sc8551_update_bits(struct sc8551 *sc, u8 reg,
-				    u8 mask, u8 data)
+static int sc8551_update_bits(struct sc8551 *sc, u8 reg, u8 mask, u8 data)
 {
 	int ret;
 	u8 tmp;
@@ -388,7 +392,6 @@ out:
 	mutex_unlock(&sc->i2c_rw_lock);
 	return ret;
 }
-
 /*********************************************************************/
 
 static int sc8551_enable_charge(struct sc8551 *sc, bool enable)
@@ -977,22 +980,28 @@ EXPORT_SYMBOL_GPL(sc8551_set_adc_scanrate);
 static int sc8551_get_adc_data(struct sc8551 *sc, int channel, int *result)
 {
 	int ret;
-	u8 val_l, val_h;
+	u8 val_h, val_l;
 	u16 val;
+	u64 temp;
 
 	if (channel < 0 || channel >= ADC_MAX_NUM)
-		return 0;
+		return -EINVAL;
 
 	ret = sc8551_read_byte(sc, ADC_REG_BASE + (channel << 1), &val_h);
-	ret = sc8551_read_byte(sc, ADC_REG_BASE + (channel << 1) + 1, &val_l);
-
 	if (ret < 0)
 		return ret;
-	val = (val_h << 8) | val_l;
-	*result = val;
+
+	ret = sc8551_read_byte(sc, ADC_REG_BASE + (channel << 1) + 1, &val_l);
+	if (ret < 0)
+		return ret;
+
+	val = ((u16)val_h << 8) | val_l;
 
 	if (sc->chip_vendor == SC8551) {
-		*result = (u64)val * (u64)sc8551_adc_lsb[channel] / 10000000;
+		temp = (u64)val * sc8551_adc_lsb[channel];
+		*result = div_u64(temp, SC8551_ADC_SCALE);
+	} else {
+		*result = (int)val;
 	}
 
 	return 0;
@@ -1427,7 +1436,7 @@ static int sc8551_init_protection(struct sc8551 *sc)
 		!ret ? "successfullly" : "failed");
 
 	ret = sc8551_enable_batucp_alarm(sc, !sc->cfg->bat_ucp_alm_disable);
-	sc_info("%s bat ocp alarm %s\n",
+	sc_info("%s bat ucp alarm %s\n",
 		sc->cfg->bat_ucp_alm_disable ? "disable" : "enable",
 		!ret ? "successfullly" : "failed");
 
@@ -1495,9 +1504,11 @@ static int sc8551_init_protection(struct sc8551 *sc)
 	ret = sc8551_set_bat_therm_th(sc, sc->cfg->bat_therm_th);
 	sc_info("set die therm threshold %d %s\n", sc->cfg->bat_therm_th,
 		!ret ? "successfully" : "failed");
+
 	ret = sc8551_set_bus_therm_th(sc, sc->cfg->bus_therm_th);
 	sc_info("set bus therm threshold %d %s\n", sc->cfg->bus_therm_th,
 		!ret ? "successfully" : "failed");
+
 	ret = sc8551_set_die_therm_th(sc, sc->cfg->die_therm_th);
 	sc_info("set die therm threshold %d %s\n", sc->cfg->die_therm_th,
 		!ret ? "successfully" : "failed");
@@ -1599,7 +1610,7 @@ static int sc8551_disable_vbus_range(struct sc8551 *sc, bool disable)
 
 static int sc8551_init_device(struct sc8551 *sc)
 {
-	sc_info("sc8551_init_device");
+	sc_info("start\n");
 	sc8551_set_reg_reset(sc);
 	sc8551_enable_wdt(sc, false);
 
@@ -1839,7 +1850,7 @@ static int sc8551_charger_set_property(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_CHARGING_ENABLED:
 		sc8551_enable_charge(sc, val->intval);
 		sc8551_check_charge_enabled(sc, &sc->charge_enabled);
-		sc_info("POWER_SUPPLY_PROP_CHARGING_ENABLED: %s\n",
+		sc_info("charging: %s\n",
 				val->intval ? "enable" : "disable");
 		break;
 	case POWER_SUPPLY_PROP_PRESENT:

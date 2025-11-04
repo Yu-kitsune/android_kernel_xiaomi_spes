@@ -31,10 +31,10 @@
 #include <linux/regmap.h>
 #include <linux/random.h>
 
-#define ds_info	pr_info_ratelimited
-#define ds_dbg	pr_debug_ratelimited
-#define ds_err	pr_err_ratelimited
-#define ds_log	pr_info_ratelimited
+#define ds_info(fmt, ...)	do { pr_info(fmt, ##__VA_ARGS__); } while (0)
+#define ds_dbg(fmt, ...)	do { pr_debug(fmt, ##__VA_ARGS__); } while (0)
+#define ds_err(fmt, ...)	do { pr_err(fmt, ##__VA_ARGS__); } while (0)
+#define ds_log(fmt, ...)	do { pr_info(fmt, ##__VA_ARGS__); } while (0)
 
 struct ds28e16_data {
 	struct platform_device *pdev;
@@ -1118,7 +1118,7 @@ int ds28e16_get_chip_ok(struct ds28e16_data *ds28e16_data, int *val)
 	int ret;
 	*val = 0;
 
-	ds_log("getian---POWER_SUPPLY_PROP_CHIP_OK\n");
+	ds_dbg("getian---POWER_SUPPLY_PROP_CHIP_OK\n");
 	if (!ds28e16_data->romid_verified) {
 		ret = ds28el16_Read_RomID_retry(mi_romid);
 		if (ret != DS_TRUE)
@@ -1148,7 +1148,7 @@ int ds28e16_get_page0_data(struct ds28e16_data *ds28e16_data, unsigned char *buf
 	if (buf_len < 16)
 		return -EINVAL;
 
-	ds_log("getian---POWER_SUPPLY_PROP_PAGE0_DATA\n");
+	ds_dbg("getian---POWER_SUPPLY_PROP_PAGE0_DATA\n");
 	ret = ds28el16_get_page_data_retry(0, buf);
 	if (ret != DS_TRUE) {
 		ds_err("ds28el16_get_page_data_retry fail!\n");

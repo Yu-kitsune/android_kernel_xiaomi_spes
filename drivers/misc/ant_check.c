@@ -41,7 +41,7 @@ static irqreturn_t ant_interrupt(int irq, void *data)
 		return IRQ_HANDLED;
 	} else {
 		ant_info->ant_check_state = ant_gpio;
-		pr_err("Macle report key %s\n");
+		pr_err("Macle report key %s\n", ant_gpio ? "connect" : "disconnect");
 	}
 
 	if (ant_gpio) {

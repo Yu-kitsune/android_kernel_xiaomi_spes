@@ -1,10 +1,11 @@
 #if !defined(__NOPMI_CHG_H__)
 #define __NOPMI_CHG_H__
 
+#include <linux/atomic.h>
 #include "nopmi_chg_jeita.h"
 
 #define STEP_TABLE_MAX 2
-#define STEP_DOWN_CURR_MA 200
+#define STEP_DOWN_CURR_MA 100
 #define CV_BATT_VOLT_HYSTERESIS 20
 
 #define CC_CV_STEP_VOTER	"CC_CV_STEP_VOTER"
@@ -56,6 +57,7 @@ struct nopmi_chg {
 	struct votable *fcc_votable;
 	struct votable *fv_votable;
 	struct votable *usb_icl_votable;
+	struct votable *chg_dis_votable;
 #endif
 	struct nopmi_dt_props dt;
 	struct delayed_work nopmi_chg_work;
@@ -71,7 +73,8 @@ struct nopmi_chg {
 	int batt_health;
 	int input_suspend;
 	int mtbf_cur;
-	int vbat_mv;
+	atomic_t batt_volt_m;
+	atomic_t batt_temp_c;
 	/*jeita config*/
 	struct nopmi_chg_jeita_st jeita_ctl;
 

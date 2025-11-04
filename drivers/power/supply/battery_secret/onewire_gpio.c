@@ -21,10 +21,10 @@
 #include <linux/device.h>
 #include <linux/spinlock.h>
 
-#define ow_info	pr_info_ratelimited
-#define ow_dbg	pr_debug_ratelimited
-#define ow_err	pr_err_ratelimited
-#define ow_log	pr_info_ratelimited
+#define ow_info(fmt, ...)	do { pr_info(fmt, ##__VA_ARGS__); } while (0)
+#define ow_dbg(fmt, ...)	do { pr_debug(fmt, ##__VA_ARGS__); } while (0)
+#define ow_err(fmt, ...)	do { pr_err(fmt, ##__VA_ARGS__); } while (0)
+#define ow_log(fmt, ...)	do { pr_info(fmt, ##__VA_ARGS__); } while (0)
 
 #define DRV_STRENGTH_16MA		(0x7 << 6)
 #define DRV_STRENGTH_12MA		(0x5 << 6)
@@ -473,10 +473,10 @@ static int onewire_gpio_probe(struct platform_device *pdev)
 					(uintptr_t)onewire_data->onewire_gpio_level_addr, 0x4);
 	onewire_data->gpio_cfg_reg = devm_ioremap(&pdev->dev,
 					(uintptr_t)onewire_data->onewire_gpio_cfg_addr, 0x4);
-	ow_log("onewire_gpio_level_addr is 0x%lx; onewire_gpio_cfg_addr is 0x%lx\n",
+	ow_log("onewire_gpio_level_addr is 0x%lx, onewire_gpio_cfg_addr is 0x%lx\n",
 					(uintptr_t)(onewire_data->onewire_gpio_level_addr),
 					(uintptr_t)(onewire_data->onewire_gpio_cfg_addr));
-	ow_log("onewire_data->gpio_cfg_reg is 0x%lx; onewire_data->gpio_in_out_reg is 0x%lx'\n",
+	ow_log("gpio_cfg_reg is 0x%lx, gpio_in_out_reg is 0x%lx\n",
 					(uintptr_t)(onewire_data->gpio_cfg_reg),
 					(uintptr_t)(onewire_data->gpio_in_out_reg));
 

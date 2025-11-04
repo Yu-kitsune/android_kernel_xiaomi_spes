@@ -7,13 +7,13 @@
 
 enum bq2589x_vbus_type {
 	BQ2589X_VBUS_NONE,
-	BQ2589X_VBUS_USB_SDP,//5V/500MA
-	BQ2589X_VBUS_USB_CDP, /*CDP for bq25890, Adapter for bq25892*///5V/1A
-	BQ2589X_VBUS_USB_DCP,//5V/2A
-	BQ2589X_VBUS_MAXC,//HVDCP	9V/1A
-	BQ2589X_VBUS_UNKNOWN,//5V/500MA
-	BQ2589X_VBUS_NONSTAND,//float 5V/1A
-	BQ2589X_VBUS_OTG,//5V/
+	BQ2589X_VBUS_USB_SDP, // 5V/500MA
+	BQ2589X_VBUS_USB_CDP, // CDP for bq25890, Adapter for bq25892: 5V/1A
+	BQ2589X_VBUS_USB_DCP, // 5V/2A
+	BQ2589X_VBUS_MAXC, // HVDCP 9V/1A
+	BQ2589X_VBUS_UNKNOWN, // 5V/500MA
+	BQ2589X_VBUS_NONSTAND, // float 5V/1A
+	BQ2589X_VBUS_OTG, // 5V
 	BQ2589X_VBUS_TYPE_NUM,
 };
 
@@ -84,29 +84,32 @@ struct bq2589x {
 	struct device *dev;
 	struct i2c_client *client;
 	enum bq2589x_part_no part_no;
+	enum bq2589x_vbus_type vbus_type;
 
 	struct tcpc_device *tcpc_dev;
 	struct notifier_block pd_nb;
 
 	int		revision;
 	unsigned int	status;
-	int		vbus_type;
+	//int		vbus_type;
 	int		vbus_volt;
 	int		vbat_volt;
 	int		chg_current;
 	int		rsoc;
 	int		pd_active;
 	bool	enabled;
-	bool	is_awake;
 
 	struct mutex i2c_rw_lock;
 	struct mutex usb_switch_lock;
+	struct mutex dpdm_lock;
+	//atomic_t dpdm_running;
 
 	struct bq2589x_config cfg;
-	struct work_struct irq_work;
+	//struct work_struct irq_work;
 	struct work_struct adapter_in_work;
 	struct work_struct adapter_out_work;
 	struct work_struct start_charging_work;
+	struct delayed_work irq_work;
 	struct delayed_work monitor_work;
 	struct delayed_work ico_work;
 	struct delayed_work charger_work;
@@ -114,6 +117,7 @@ struct bq2589x {
 	struct delayed_work check_pe_tuneup_work;
 	struct delayed_work time_delay_work;
 	struct delayed_work usb_changed_work;
+	struct delayed_work dpdm_work;
 	//struct delayed_work period_work;
 
 	struct power_supply_desc usb;
@@ -137,6 +141,7 @@ struct bq2589x {
 	int irq_gpio;
 	int usb_switch1;
 	bool usb_switch_flag;
+	bool is_awake;
 };
 
 struct pe_ctrl {
@@ -147,9 +152,9 @@ struct pe_ctrl {
 	bool tune_fail;
 	int tune_count;
 	int target_volt;
-	int high_volt_level;/* vbus volt > this threshold means tune up successfully */
+	int high_volt_level; /* vbus volt > this threshold means tune up successfully */
 	int low_volt_level; /* vbus volt < this threshold means tune down successfully */
-	int vbat_min_volt;  /* to tune up voltage only when vbat > this threshold */
+	int vbat_min_volt; /* to tune up voltage only when vbat > this threshold */
 };
 
 extern int main_set_hiz_mode(bool en);
