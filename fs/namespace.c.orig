@@ -1132,19 +1132,7 @@ struct vfsmount *vfs_create_mount(struct fs_context *fc)
 		return ERR_PTR(-EINVAL);
 	sb = fc->root->d_sb;
 
-#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
-	// We keep checking for ksu process
-	if (susfs_is_current_ksu_domain()) {
-		mnt = susfs_alloc_sus_vfsmnt(fc->source ?: "none");
-		goto bypass_orig_flow;
-	}
-#endif
-
 	mnt = alloc_vfsmnt(fc->source ?: "none");
-#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
-bypass_orig_flow:
-#endif
-
 	if (!mnt)
 		return ERR_PTR(-ENOMEM);
 
@@ -1192,9 +1180,21 @@ struct vfsmount *vfs_kern_mount(struct file_system_type *type,
 	struct fs_context *fc;
 	struct vfsmount *mnt;
 	int ret = 0;
-
+	
 	if (!type)
 		return ERR_PTR(-EINVAL);
+		
+#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+	// For newly created mounts, the only caller process we care is KSU
+	if (unlikely(susfs_is_current_ksu_domain())) {
+		mnt = alloc_vfsmnt(name, true, 0);
+		goto bypass_orig_flow;
+	}
+	mnt = alloc_vfsmnt(name, false, 0);
+bypass_orig_flow:
+#else
+ 	mnt = alloc_vfsmnt(name);
+#endif
 
 	fc = fs_context_for_mount(type, flags);
 	if (IS_ERR(fc))
@@ -1259,6 +1259,8 @@ skip_checking_for_ksu_proc:
 		mnt = susfs_alloc_sus_vfsmnt(old->mnt_devname);
 		goto bypass_orig_flow;
 	}
+	mnt = alloc_vfsmnt(old->mnt_devname, false, 0);
+orig_flow:
 #endif
  	mnt = alloc_vfsmnt(old->mnt_devname);
 #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
@@ -3931,8 +3933,8 @@ void susfs_reorder_mnt_id(void) {
 		if (mnt->mnt_id == DEFAULT_KSU_MNT_ID) {
 			continue;
 		}
-		WRITE_ONCE(mnt->mnt.susfs_mnt_id_backup, READ_ONCE(mnt->mnt_id));
-		WRITE_ONCE(mnt->mnt_id, first_mnt_id++);
+		mnt->mnt.susfs_mnt_id_backup = mnt->mnt_id;
+		mnt->mnt_id = first_mnt_id++;
 	}
 	put_mnt_ns(mnt_ns);
 }
